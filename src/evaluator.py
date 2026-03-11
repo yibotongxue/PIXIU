@@ -30,7 +30,8 @@ def simple_evaluate(
     decontamination_ngrams_path=None,
     write_out=False,
     output_base_path=None,
-    model_prompt=None
+    model_prompt=None,
+    base_url=None
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -79,7 +80,7 @@ def simple_evaluate(
                 model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
             )
         else:
-            lm = ChatLM(model)
+            lm = ChatLM(model, base_url=base_url)
     else:
         assert isinstance(model, lm_eval.base.LM)
         lm = model

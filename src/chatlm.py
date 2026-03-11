@@ -50,12 +50,14 @@ async def oa_completion(**kwargs):
 class ChatLM(BaseLM):
     REQ_CHUNK_SIZE = 20
 
-    def __init__(self, model, truncate=False):
+    def __init__(self, model, truncate=False, base_url=None):
         """
 
         :param model: str
         :param truncate: bool
             Truncate input if too long (if False and input is too long, throw error)
+        :param base_url: str
+            Base URL for OpenAI API compatible server (e.g., http://localhost:8000/v1)
         """
         super().__init__()
 
@@ -63,13 +65,25 @@ class ChatLM(BaseLM):
 
         self.model = model
         self.truncate = truncate
-        # Read from environment variable OPENAI_API_SECRET_KEY
-        api_key = os.environ["OPENAI_API_SECRET_KEY"]
+        self.base_url = base_url or os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+
+        # Check if using local vLLM server
+        if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
+            # For local vLLM server, use dummy API key
+            api_key = "EMPTY"
+            self.headers = {
+                "Content-Type": "application/json",
+            }
+        else:
+            # For OpenAI API
+            api_key = os.environ["OPENAI_API_SECRET_KEY"]
+            self.headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+
+        # Use a dummy tokenizer for API-based models
         self.tokenizer = transformers.GPT2TokenizerFast.from_pretrained("gpt2")
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
 
     @property
     def eot_token_id(self):
@@ -136,7 +150,7 @@ class ChatLM(BaseLM):
                 inps.append(context[0])
 
             responses = asyncio.run(oa_completion(
-                url="https://api.openai.com/v1/chat/completions",
+                url=f"{self.base_url}/chat/completions",
                 headers=self.headers,
                 model=self.model,
                 messages=[{"role": "user", "content": inp} for inp in inps],
