@@ -50,7 +50,7 @@ async def oa_completion(**kwargs):
 class ChatLM(BaseLM):
     REQ_CHUNK_SIZE = 20
 
-    def __init__(self, model, truncate=False, base_url=None):
+    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256):
         """
 
         :param model: str
@@ -58,6 +58,8 @@ class ChatLM(BaseLM):
             Truncate input if too long (if False and input is too long, throw error)
         :param base_url: str
             Base URL for OpenAI API compatible server (e.g., http://localhost:8000/v1)
+        :param max_gen_toks: int
+            Maximum tokens to generate
         """
         super().__init__()
 
@@ -66,6 +68,7 @@ class ChatLM(BaseLM):
         self.model = model
         self.truncate = truncate
         self.base_url = base_url or os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+        self._max_gen_toks = max_gen_toks
 
         # Check if using local vLLM server
         if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
@@ -96,7 +99,7 @@ class ChatLM(BaseLM):
 
     @property
     def max_gen_toks(self):
-        return 10
+        return self._max_gen_toks
 
     @property
     def batch_size(self):

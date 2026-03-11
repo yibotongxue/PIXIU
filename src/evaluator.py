@@ -75,12 +75,22 @@ def simple_evaluate(
     if isinstance(model, str):
         if model_args is None:
             model_args = ""
+
+        # Parse model_args for ChatLM parameters
+        parsed_args = {}
+        if model[:3] == "gpt":
+            import re
+            # Parse max_gen_toks from model_args (e.g., "model=qwen,max_gen_toks=1024")
+            max_gen_match = re.search(r'max_gen_toks=(\d+)', model_args)
+            if max_gen_match:
+                parsed_args['max_gen_toks'] = int(max_gen_match.group(1))
+
         if model[:3] != "gpt":
             lm = lm_eval.models.get_model(model).create_from_arg_string(
                 model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
             )
         else:
-            lm = ChatLM(model, base_url=base_url)
+            lm = ChatLM(model, base_url=base_url, **parsed_args)
     else:
         assert isinstance(model, lm_eval.base.LM)
         lm = model
