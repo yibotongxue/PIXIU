@@ -84,6 +84,10 @@ def simple_evaluate(
             max_gen_match = re.search(r'max_gen_toks=(\d+)', model_args)
             if max_gen_match:
                 parsed_args['max_gen_toks'] = int(max_gen_match.group(1))
+            # Parse temperature from model_args (e.g., "model=qwen,temperature=0.7")
+            temp_match = re.search(r'temperature=([\d.]+)', model_args)
+            if temp_match:
+                parsed_args['temperature'] = float(temp_match.group(1))
 
         if model[:3] != "gpt":
             lm = lm_eval.models.get_model(model).create_from_arg_string(

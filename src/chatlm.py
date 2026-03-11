@@ -50,7 +50,7 @@ async def oa_completion(**kwargs):
 class ChatLM(BaseLM):
     REQ_CHUNK_SIZE = 20
 
-    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256):
+    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0):
         """
 
         :param model: str
@@ -69,6 +69,7 @@ class ChatLM(BaseLM):
         self.truncate = truncate
         self.base_url = base_url or os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
         self._max_gen_toks = max_gen_toks
+        self._temperature = temperature
 
         # Check if using local vLLM server
         if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
@@ -100,6 +101,10 @@ class ChatLM(BaseLM):
     @property
     def max_gen_toks(self):
         return self._max_gen_toks
+
+    @property
+    def temperature(self):
+        return self._temperature
 
     @property
     def batch_size(self):
@@ -158,7 +163,7 @@ class ChatLM(BaseLM):
                 model=self.model,
                 messages=[{"role": "user", "content": inp} for inp in inps],
                 max_tokens=self.max_gen_toks,
-                temperature=0.0,
+                temperature=self.temperature,
                 # stop=until,
             ))
 
