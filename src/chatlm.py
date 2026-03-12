@@ -5,9 +5,6 @@ import transformers
 from lm_eval.base import BaseLM
 from lm_eval import utils
 from tqdm import tqdm
-import time
-
-BACKOFF_TIME = 0.1
 
 async def oa_completion(**kwargs):
     """Query OpenAI API for completion using async openai library with concurrency control."""
@@ -37,7 +34,6 @@ async def oa_completion(**kwargs):
 
 
 class ChatLM(BaseLM):
-    REQ_CHUNK_SIZE = 20
 
     def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20):
         """
@@ -124,37 +120,21 @@ class ChatLM(BaseLM):
 
         re_ord = utils.Reorderer(requests, _collate)
 
-        def sameuntil_chunks(xs, size):
-            ret = []
-            lastuntil = "</s>"
-            for x in xs:
-                if len(ret) >= size:
-                    yield ret, lastuntil
-                    ret = []
-                    lastuntil = "</s>"
-                ret.append(x)
+        # Collect all inputs
+        all_inputs = [context[0] for context in re_ord.get_reordered()]
 
-            if ret:
-                yield ret, lastuntil
-
-        # todo: more intelligent batching for heterogeneous `until`
-        for chunk, until in tqdm(
-            list(sameuntil_chunks(re_ord.get_reordered(), self.REQ_CHUNK_SIZE))
-        ):
-            inps = []
-            for context in chunk:
-                inps.append(context[0])
-
+        # Process all requests with async concurrency control
+        if all_inputs:
             responses = asyncio.run(oa_completion(
                 client=self.client,
                 model=self.model,
-                messages=inps,
+                messages=all_inputs,
                 max_tokens=self.max_gen_toks,
                 temperature=self.temperature,
                 max_concurrent=self._max_concurrent,
             ))
 
-            for resp, context in zip(responses, chunk):
+            for resp, context in zip(responses, re_ord.get_reordered()):
                 s = resp
 
                 # partial caching

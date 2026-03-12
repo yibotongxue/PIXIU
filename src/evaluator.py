@@ -19,8 +19,6 @@ def simple_evaluate(
     model_args=None,
     tasks=[],
     num_fewshot=0,
-    batch_size=None,
-    max_batch_size=None,
     device=None,
     no_cache=False,
     limit=None,
@@ -45,10 +43,6 @@ def simple_evaluate(
         List of task names or Task objects. Task objects will be taken to have name task.EVAL_HARNESS_NAME if defined and type(task).__name__ otherwise.
     :param num_fewshot: int
         Number of examples in few-shot context
-    :param batch_size: int or str, optional
-        Batch size for model
-    :param max_batch_size: int, optional
-        Maximal batch size to try with automatic batch size detection
     :param device: str, optional
         PyTorch device (e.g. "cpu" or "cuda:0") for running models
     :param no_cache: bool
@@ -106,7 +100,7 @@ def simple_evaluate(
 
         if model[:3] != "gpt":
             lm = lm_eval.models.get_model(model).create_from_arg_string(
-                model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
+                model_args, {"device": device}
             )
         else:
             # Use parsed model name from model_args (e.g., "dataflow"), not "gpt3"
@@ -149,8 +143,7 @@ def simple_evaluate(
         "model": (model if isinstance(model, str) else model.model.config._name_or_path),
         "model_args": model_args,
         "num_fewshot": num_fewshot,
-        "batch_size": batch_size,
-        "batch_sizes": list(lm.batch_sizes.values()) if hasattr(lm, "batch_sizes") else [],
+        "max_concurrent": max_concurrent,
         "device": device,
         "no_cache": no_cache,
         "limit": limit,

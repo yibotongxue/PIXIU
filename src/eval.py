@@ -18,9 +18,6 @@ def parse_args():
     parser.add_argument("--model_prompt", default="no_prompt", choices=list(MODEL_PROMPT_MAP.keys()))
     parser.add_argument("--provide_description", action="store_true")
     parser.add_argument("--num_fewshot", type=int, default=0)
-    parser.add_argument("--batch_size", type=str, default=None)
-    parser.add_argument("--max_batch_size", type=int, default=None,
-                        help="Maximal batch size to try with --batch_size auto")
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--output_path", default=None)
     parser.add_argument("--limit", type=float, default=None,
@@ -68,8 +65,6 @@ def main():
         model_args=args.model_args,
         tasks=task_names,
         num_fewshot=args.num_fewshot,
-        batch_size=args.batch_size,
-        max_batch_size=args.max_batch_size,
         device=args.device,
         no_cache=args.no_cache,
         limit=args.limit,
@@ -91,10 +86,10 @@ def main():
         with open(args.output_path, "w") as f:
             f.write(dumped)
 
-    batch_sizes = ",".join(map(str, results["config"]["batch_sizes"]))
+    max_concurrent = results["config"].get("max_concurrent", args.max_concurrent)
     print(
         f"{args.model} ({args.model_args}), limit: {args.limit}, provide_description: {args.provide_description}, "
-        f"num_fewshot: {args.num_fewshot}, batch_size: {args.batch_size}{f' ({batch_sizes})' if batch_sizes else ''}"
+        f"num_fewshot: {args.num_fewshot}, max_concurrent: {max_concurrent}"
     )
     print(evaluator.make_table(results))
 
