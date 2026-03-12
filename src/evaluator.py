@@ -81,6 +81,12 @@ def simple_evaluate(
         parsed_args = {}
         if model[:3] == "gpt":
             import re
+            # Parse model name from model_args (e.g., "model=qwen,max_gen_toks=1024")
+            model_match = re.search(r'model=([^,]+)', model_args)
+            if model_match:
+                parsed_args['model'] = model_match.group(1)
+            else:
+                parsed_args['model'] = model  # fallback to "gpt3"
             # Parse max_gen_toks from model_args (e.g., "model=qwen,max_gen_toks=1024")
             max_gen_match = re.search(r'max_gen_toks=(\d+)', model_args)
             if max_gen_match:
@@ -103,7 +109,9 @@ def simple_evaluate(
                 model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
             )
         else:
-            lm = ChatLM(model, base_url=base_url, **parsed_args)
+            # Use parsed model name from model_args (e.g., "dataflow"), not "gpt3"
+            actual_model = parsed_args.pop('model', model)
+            lm = ChatLM(actual_model, base_url=base_url, **parsed_args)
     else:
         assert isinstance(model, lm_eval.base.LM)
         lm = model
