@@ -9,48 +9,37 @@ import time
 
 BACKOFF_TIME = 0.1
 
-async def single_chat(client, **kwargs):
-    global BACKOFF_TIME
-    backoff_time = BACKOFF_TIME
-    while True:
-        try:
-            r = await client.post(**kwargs, timeout=20)
-            json_response = r.json()
-            s = json_response['choices'][0]["message"]['content']
-            time.sleep(backoff_time)
-            return s
-        except Exception:
-            import traceback
-
-            traceback.print_exc()
-            time.sleep(backoff_time * 30)
-            BACKOFF_TIME *= 1.05
-
-
 async def oa_completion(**kwargs):
-    """Query OpenAI API for completion.
+    """Query OpenAI API for completion using async openai library with concurrency control."""
+    client = kwargs["client"]
+    messages = kwargs["messages"]
+    model = kwargs["model"]
+    max_tokens = kwargs["max_tokens"]
+    temperature = kwargs["temperature"]
+    max_concurrent = kwargs.get("max_concurrent", 20)
 
-    Retry with back-off until they respond
-    """
-    import httpx
-
-    async with httpx.AsyncClient() as client:
-        tasks = [single_chat(
-            client=client,
-            url=kwargs["url"], headers=kwargs["headers"],
-            json={
-                "temperature": kwargs["temperature"], "max_tokens": kwargs["max_tokens"],
-                "model": kwargs["model"], "messages": [message,],
-            }
-        ) for message in kwargs["messages"]]
-        results = await asyncio.gather(*tasks)
-        return results
+    # Process in chunks to control concurrency
+    results = []
+    for i in range(0, len(messages), max_concurrent):
+        chunk = messages[i:i + max_concurrent]
+        tasks = [
+            client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": msg}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            for msg in chunk
+        ]
+        chunk_results = await asyncio.gather(*tasks)
+        results.extend([r.choices[0].message.content for r in chunk_results])
+    return results
 
 
 class ChatLM(BaseLM):
     REQ_CHUNK_SIZE = 20
 
-    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0):
+    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20):
         """
 
         :param model: str
@@ -60,31 +49,30 @@ class ChatLM(BaseLM):
             Base URL for OpenAI API compatible server (e.g., http://localhost:8000/v1)
         :param max_gen_toks: int
             Maximum tokens to generate
+        :param max_concurrent: int
+            Maximum number of concurrent API requests
         """
         super().__init__()
 
-        import openai
+        from openai import AsyncOpenAI
 
         self.model = model
         self.truncate = truncate
         self.base_url = base_url or os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
         self._max_gen_toks = max_gen_toks
         self._temperature = temperature
+        self._max_concurrent = max_concurrent
 
         # Check if using local vLLM server
         if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
             # For local vLLM server, use dummy API key
             api_key = "EMPTY"
-            self.headers = {
-                "Content-Type": "application/json",
-            }
         else:
             # For OpenAI API
-            api_key = os.environ["OPENAI_API_SECRET_KEY"]
-            self.headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
+            api_key = os.environ.get("OPENAI_API_SECRET_KEY", "")
+
+        # Create async openai client
+        self.client = AsyncOpenAI(base_url=self.base_url, api_key=api_key)
 
         # Use a dummy tokenizer for API-based models
         self.tokenizer = transformers.GPT2TokenizerFast.from_pretrained("gpt2")
@@ -158,13 +146,12 @@ class ChatLM(BaseLM):
                 inps.append(context[0])
 
             responses = asyncio.run(oa_completion(
-                url=f"{self.base_url}/chat/completions",
-                headers=self.headers,
+                client=self.client,
                 model=self.model,
-                messages=[{"role": "user", "content": inp} for inp in inps],
+                messages=inps,
                 max_tokens=self.max_gen_toks,
                 temperature=self.temperature,
-                # stop=until,
+                max_concurrent=self._max_concurrent,
             ))
 
             for resp, context in zip(responses, chunk):

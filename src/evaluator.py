@@ -31,7 +31,8 @@ def simple_evaluate(
     write_out=False,
     output_base_path=None,
     model_prompt=None,
-    base_url=None
+    base_url=None,
+    max_concurrent=20
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -88,6 +89,14 @@ def simple_evaluate(
             temp_match = re.search(r'temperature=([\d.]+)', model_args)
             if temp_match:
                 parsed_args['temperature'] = float(temp_match.group(1))
+            # Parse max_concurrent from model_args (e.g., "model=qwen,max_concurrent=10")
+            concurrent_match = re.search(r'max_concurrent=(\d+)', model_args)
+            if concurrent_match:
+                parsed_args['max_concurrent'] = int(concurrent_match.group(1))
+            else:
+                parsed_args['max_concurrent'] = max_concurrent
+        else:
+            parsed_args['max_concurrent'] = max_concurrent
 
         if model[:3] != "gpt":
             lm = lm_eval.models.get_model(model).create_from_arg_string(

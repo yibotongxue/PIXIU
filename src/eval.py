@@ -35,6 +35,8 @@ def parse_args():
     parser.add_argument("--output_base_path", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None,
                         help="Base URL for OpenAI API compatible server (e.g., http://localhost:8000/v1)")
+    parser.add_argument("--max_concurrent", type=int, default=20,
+                        help="Maximum number of concurrent API requests")
 
     return parser.parse_args()
 
@@ -77,7 +79,8 @@ def main():
         write_out=args.write_out,
         output_base_path=args.output_base_path,
         model_prompt=args.model_prompt,
-        base_url=args.base_url
+        base_url=args.base_url,
+        max_concurrent=args.max_concurrent
     )
 
     dumped = json.dumps(results, indent=2)
