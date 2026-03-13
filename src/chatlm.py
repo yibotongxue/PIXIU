@@ -4,10 +4,24 @@ import numpy as np
 import transformers
 from lm_eval.base import BaseLM
 from lm_eval import utils
-from tqdm import tqdm
+
+
+async def _call_api(client, model, msg, max_tokens, temperature, semaphore):
+    """Single API call with semaphore for concurrency control."""
+    async with semaphore:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": msg}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return response.choices[0].message.content
+
 
 async def oa_completion(**kwargs):
-    """Query OpenAI API for completion using async openai library with concurrency control."""
+    """Query OpenAI API for completion using async openai library with tqdm progress."""
+    import tqdm.asyncio as tqdm_aio
+
     client = kwargs["client"]
     messages = kwargs["messages"]
     model = kwargs["model"]
@@ -15,22 +29,24 @@ async def oa_completion(**kwargs):
     temperature = kwargs["temperature"]
     max_concurrent = kwargs.get("max_concurrent", 20)
 
-    # Process in chunks to control concurrency
-    results = []
-    for i in range(0, len(messages), max_concurrent):
-        chunk = messages[i:i + max_concurrent]
-        tasks = [
-            client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": msg}],
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            for msg in chunk
-        ]
-        chunk_results = await asyncio.gather(*tasks)
-        results.extend([r.choices[0].message.content for r in chunk_results])
+    # Create semaphore for concurrency control
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    # Create all tasks
+    tasks = [
+        _call_api(client, model, msg, max_tokens, temperature, semaphore)
+        for msg in messages
+    ]
+
+    # Use tqdm.asyncio.gather for progress bar
+    results = await tqdm_aio.gather(*tasks, desc="API Requests")
+
     return results
+
+
+def run_async(coro):
+    """Run async coroutine from synchronous code."""
+    return asyncio.run(coro)
 
 
 class ChatLM(BaseLM):
@@ -125,7 +141,7 @@ class ChatLM(BaseLM):
 
         # Process all requests with async concurrency control
         if all_inputs:
-            responses = asyncio.run(oa_completion(
+            responses = run_async(oa_completion(
                 client=self.client,
                 model=self.model,
                 messages=all_inputs,
