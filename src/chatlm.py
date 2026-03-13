@@ -18,9 +18,17 @@ async def _call_api(client, model, msg, max_tokens, temperature, semaphore):
         return response.choices[0].message.content
 
 
+async def _call_api_with_progress(client, model, msg, max_tokens, temperature, semaphore, pbar):
+    """Ensure the progress bar advances whenever a request finishes."""
+    try:
+        return await _call_api(client, model, msg, max_tokens, temperature, semaphore)
+    finally:
+        pbar.update(1)
+
+
 async def oa_completion(**kwargs):
     """Query OpenAI API for completion using async openai library with tqdm progress."""
-    import tqdm.asyncio as tqdm_aio
+    from tqdm.auto import tqdm
 
     client = kwargs["client"]
     messages = kwargs["messages"]
@@ -32,14 +40,34 @@ async def oa_completion(**kwargs):
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    # Create all tasks
-    tasks = [
-        _call_api(client, model, msg, max_tokens, temperature, semaphore)
-        for msg in messages
-    ]
+    # Create progress bar
+    pbar = tqdm(total=len(messages), desc="API Requests", leave=False)
 
-    # Use tqdm.asyncio.gather for progress bar
-    results = await tqdm_aio.gather(*tasks, desc="API Requests")
+    try:
+        # Create all tasks explicitly so gather preserves order while progress is tracked per completion.
+        tasks = [
+            asyncio.create_task(
+                _call_api_with_progress(
+                    client,
+                    model,
+                    msg,
+                    max_tokens,
+                    temperature,
+                    semaphore,
+                    pbar,
+                )
+            )
+            for msg in messages
+        ]
+
+        # Wait for every request so the progress bar can reach completion even if some requests fail.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        pbar.close()
+
+    exceptions = [result for result in results if isinstance(result, Exception)]
+    if exceptions:
+        raise exceptions[0]
 
     return results
 
