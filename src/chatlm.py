@@ -79,7 +79,7 @@ def run_async(coro):
 
 class ChatLM(BaseLM):
 
-    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20):
+    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20, timeout=600):
         """
 
         :param model: str
@@ -91,6 +91,8 @@ class ChatLM(BaseLM):
             Maximum tokens to generate
         :param max_concurrent: int
             Maximum number of concurrent API requests
+        :param timeout: int
+            Timeout in seconds for API requests (default 600)
         """
         super().__init__()
 
@@ -102,6 +104,7 @@ class ChatLM(BaseLM):
         self._max_gen_toks = max_gen_toks
         self._temperature = temperature
         self._max_concurrent = max_concurrent
+        self._timeout = timeout
 
         # Check if using local vLLM server
         if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
@@ -111,8 +114,8 @@ class ChatLM(BaseLM):
             # For OpenAI API
             api_key = os.environ.get("OPENAI_API_SECRET_KEY", "")
 
-        # Create async openai client
-        self.client = AsyncOpenAI(base_url=self.base_url, api_key=api_key)
+        # Create async openai client with timeout
+        self.client = AsyncOpenAI(base_url=self.base_url, api_key=api_key, timeout=self._timeout)
 
         # Use a dummy tokenizer for API-based models
         self.tokenizer = transformers.GPT2TokenizerFast.from_pretrained("gpt2")

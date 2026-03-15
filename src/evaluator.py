@@ -95,6 +95,10 @@ def simple_evaluate(
                 parsed_args['max_concurrent'] = int(concurrent_match.group(1))
             else:
                 parsed_args['max_concurrent'] = max_concurrent
+            # Parse timeout from model_args (e.g., "model=qwen,timeout=3600")
+            timeout_match = re.search(r'timeout=(\d+)', model_args)
+            if timeout_match:
+                parsed_args['timeout'] = int(timeout_match.group(1))
         else:
             parsed_args['max_concurrent'] = max_concurrent
 
