@@ -1061,6 +1061,12 @@ class CFA(Classification):
     DATASET_PATH = "TheFinAI/flare-cfa"
     LOWER_CASE = False
 
+    def has_training_docs(self):
+        return False
+
+    def has_validation_docs(self):
+        return False
+
 
 class FINARGECCARC(Classification):
     DATASET_PATH = "TheFinAI/flare-finarg-ecc-arc"
