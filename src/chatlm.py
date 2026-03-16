@@ -6,22 +6,50 @@ from lm_eval.base import BaseLM
 from lm_eval import utils
 
 
-async def _call_api(client, model, msg, max_tokens, temperature, semaphore):
-    """Single API call with semaphore for concurrency control."""
-    async with semaphore:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": msg}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        return response.choices[0].message.content
+async def _call_api(client, model, msg, max_tokens, temperature, semaphore, max_retries=2):
+    """Single API call with semaphore for concurrency control, using streaming.
+
+    Args:
+        max_retries: Maximum number of retry attempts on exception (default 2)
+    """
+    import traceback
+
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            async with semaphore:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": msg}],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stream=True,
+                )
+                # Collect streamed chunks
+                full_content = ""
+                async for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        full_content += chunk.choices[0].delta.content
+                return full_content
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait_time = (attempt + 1) * 2  # Wait 2, 4 seconds between retries
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                # All retries failed, return exception info instead of raising
+                tb_str = traceback.format_exc()
+                return f"Error: {type(e).__name__}: {str(e)}\nTraceback:\n{tb_str}"
+    # Should not reach here, but just in case
+    tb_str = traceback.format_exc()
+    return f"Error: {type(last_error).__name__}: {str(last_error)}\nTraceback:\n{tb_str}"
 
 
-async def _call_api_with_progress(client, model, msg, max_tokens, temperature, semaphore, pbar):
+async def _call_api_with_progress(client, model, msg, max_tokens, temperature, semaphore, pbar, max_retries=2):
     """Ensure the progress bar advances whenever a request finishes."""
     try:
-        return await _call_api(client, model, msg, max_tokens, temperature, semaphore)
+        return await _call_api(client, model, msg, max_tokens, temperature, semaphore, max_retries)
     finally:
         pbar.update(1)
 
@@ -36,6 +64,7 @@ async def oa_completion(**kwargs):
     max_tokens = kwargs["max_tokens"]
     temperature = kwargs["temperature"]
     max_concurrent = kwargs.get("max_concurrent", 20)
+    max_retries = kwargs.get("max_retries", 2)
 
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -55,6 +84,7 @@ async def oa_completion(**kwargs):
                     temperature,
                     semaphore,
                     pbar,
+                    max_retries,
                 )
             )
             for msg in messages
@@ -65,10 +95,8 @@ async def oa_completion(**kwargs):
     finally:
         pbar.close()
 
-    exceptions = [result for result in results if isinstance(result, Exception)]
-    if exceptions:
-        raise exceptions[0]
-
+    # Do not raise any exceptions - continue evaluation with error results
+    # Results that are strings contain error information, which will be handled by the evaluation
     return results
 
 
@@ -79,7 +107,7 @@ def run_async(coro):
 
 class ChatLM(BaseLM):
 
-    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20, timeout=600):
+    def __init__(self, model, truncate=False, base_url=None, max_gen_toks=256, temperature=0.0, max_concurrent=20, timeout=600, max_retries=2):
         """
 
         :param model: str
@@ -93,6 +121,8 @@ class ChatLM(BaseLM):
             Maximum number of concurrent API requests
         :param timeout: int
             Timeout in seconds for API requests (default 600)
+        :param max_retries: int
+            Maximum number of retry attempts on timeout (default 2)
         """
         super().__init__()
 
@@ -105,6 +135,7 @@ class ChatLM(BaseLM):
         self._temperature = temperature
         self._max_concurrent = max_concurrent
         self._timeout = timeout
+        self._max_retries = max_retries
 
         # Check if using local vLLM server
         if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
@@ -179,6 +210,7 @@ class ChatLM(BaseLM):
                 max_tokens=self.max_gen_toks,
                 temperature=self.temperature,
                 max_concurrent=self._max_concurrent,
+                max_retries=self._max_retries,
             ))
 
             for resp, context in zip(responses, re_ord.get_reordered()):
